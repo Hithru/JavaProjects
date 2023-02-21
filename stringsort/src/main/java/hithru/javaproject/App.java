@@ -1,13 +1,13 @@
 package hithru.javaproject;
 
-/**
- * Hello world!
- *
- */
-public class App 
+public class App
 {
     public static void main( String[] args )
     {
-        System.out.println( "Hello World!" );
+        String[] actualNames = new String[]{"Hithru","Dilum","Kaveesha"};
+        Sort.sort(actualNames);
+        for (final String name : actualNames) {
+            System.out.println(name);
+        }
     }
 }
