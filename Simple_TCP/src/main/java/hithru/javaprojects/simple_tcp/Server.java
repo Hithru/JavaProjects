@@ -1,8 +1,9 @@
-package hithru.javaprojects;
+package hithru.javaprojects.simple_tcp;
 
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Scanner;
 
 public class Server {
     public Server() throws Exception{
@@ -15,9 +16,12 @@ public class Server {
         BufferedReader in_socket = new BufferedReader(new InputStreamReader((socket.getInputStream())));
         PrintWriter out_socket = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()),true);
 
+
+
         out_socket.println("Welcome !");
         String message = in_socket.readLine();
         System.out.println("Client says: "+ message);
+        message = keyboard.nextLine();
 
         socket.close();
         System.out.println("Socket is closed");

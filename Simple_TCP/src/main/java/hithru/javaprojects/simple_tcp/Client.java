@@ -1,4 +1,4 @@
-package hithru.javaprojects;
+package hithru.javaprojects.simple_tcp;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
