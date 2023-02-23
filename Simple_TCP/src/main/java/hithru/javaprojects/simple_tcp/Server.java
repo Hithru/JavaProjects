@@ -21,7 +21,7 @@ public class Server {
         out_socket.println("Welcome !");
         String message = in_socket.readLine();
         System.out.println("Client says: "+ message);
-        message = keyboard.nextLine();
+
 
         socket.close();
         System.out.println("Socket is closed");
