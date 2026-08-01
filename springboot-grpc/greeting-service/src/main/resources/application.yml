@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: greeting-service
+
+grpc:
+  port: 6565
+  enableReflection: true
+
