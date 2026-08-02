@@ -1,33 +1,47 @@
 # greeting-common
 
-This module owns the language-neutral gRPC contract. It deliberately contains no Spring Boot application code, so a server, client, or another service can reuse the same generated request, response, and service types.
+This module is the reusable API contract. It contains no running Spring Boot application and no business logic. A server or future client can depend on its JAR and use the exact same generated types.
 
-## What is in this module
+## Protobuf contract
 
-- `src/main/proto/greeting.proto` declares the `greeting.GreetingService` service.
-- `GreetingRequest` and `GreetingResponse` each contain one Protobuf `string message` field.
-- `greetingMethod` is a unary RPC: one request produces one response.
-- `java_package` places generated Java types in `com.example.greeting.grpc`.
-- `java_multiple_files` creates a separate Java source file for each message and service type.
+`src/main/proto/greeting.proto` uses Protobuf 3 syntax and defines:
 
-## Code generation
+- `GreetingRequest`, containing `message` and optional `sender` strings.
+- `GreetingResponse`, containing a response `message` and numeric `sequence`.
+- `GreetingService`, demonstrating unary, server-streaming, client-streaming, and bidirectional-streaming RPCs.
 
-The Maven build uses `os-maven-plugin` to identify the current operating system and CPU architecture. `protobuf-maven-plugin` then selects the matching `protoc` and `protoc-gen-grpc-java` executables.
+The Protobuf `package greeting` determines the fully qualified service name used on the wire: `greeting.GreetingService`. The `java_package` option independently places generated Java classes in `com.example.greeting.grpc`.
 
-During `mvn compile`, Maven runs both generation goals:
+`java_multiple_files = true` generates top-level Java classes such as `GreetingRequest`, `GreetingResponse`, and `GreetingServiceGrpc` rather than nesting every type in one outer class.
 
-- `compile` generates Protobuf message classes such as `GreetingRequest` and `GreetingResponse`.
-- `compile-custom` generates gRPC code such as `GreetingServiceGrpc` and its server base class.
+## Stub and skeleton generation
 
-Generated sources appear under `target/generated-sources/protobuf/`. They are build output and should not be edited or committed. Change the `.proto` contract and rebuild instead.
+Maven runs two native tools during the build:
 
-## Build only this module
+1. `protoc` generates immutable Java message classes, builders, parsers, and serializers.
+2. `protoc-gen-grpc-java` generates `GreetingServiceGrpc`, including client stubs and `GreetingServiceImplBase`, the server skeleton extended by `greeting-service`.
 
-From the root `springboot-grpc` directory:
+The generated client APIs include asynchronous, blocking, and future-style stubs where the RPC shape supports them. A streaming client normally uses the asynchronous stub because messages arrive over time.
+
+`os-maven-plugin` provides `${os.detected.classifier}`, allowing Maven to download the compiler executable matching Windows, Linux, or macOS and the current CPU architecture.
+
+## Build this module
+
+From the root project directory:
 
 ```powershell
 mvn -pl greeting-common clean install
 ```
 
-The installed JAR is then available to `greeting-service` and any future client module.
+Generated files appear under:
 
+```text
+greeting-common/target/generated-sources/protobuf/java
+greeting-common/target/generated-sources/protobuf/grpc-java
+```
+
+Never edit generated sources directly. Update `greeting.proto`, then rebuild.
+
+## Contract evolution
+
+Field numbers are wire identifiers, not display order. Preserve them once published. If a field is removed, reserve its old name and number so they cannot be accidentally reused. New fields should receive new numbers, allowing older consumers to ignore values they do not understand.

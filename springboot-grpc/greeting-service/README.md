@@ -1,51 +1,65 @@
 # greeting-service
 
-This module is the runnable Spring Boot gRPC server. It depends on `greeting-common`, so its Java implementation compiles against types generated directly from the shared Protobuf contract.
+This module runs the Spring Boot gRPC server. It depends on `greeting-common`, extends the generated server skeleton, and lets the LogNet starter manage the embedded Netty server lifecycle.
 
-## What is in this module
+## Components
 
-- `GreetingServiceApplication` starts Spring Boot and the embedded gRPC server.
-- `GreetingServiceImpl` extends the generated `GreetingServiceGrpc.GreetingServiceImplBase` server skeleton.
-- `@GRpcService` makes the LogNet starter discover and register the implementation automatically.
-- `greetingMethod` logs the request, sends one `GreetingResponse`, and completes the `StreamObserver`.
-- `application.yml` uses port `6565` and enables server reflection so `grpcurl` can discover the contract without a local `.proto` argument.
+- `GreetingServiceApplication` is the Spring Boot entry point.
+- `GreetingServiceImpl` extends `GreetingServiceGrpc.GreetingServiceImplBase`.
+- `@GRpcService` registers the implementation as a Spring bean and gRPC service.
+- `application.yml` configures port `6565` and enables reflection for `grpcurl`.
+- `GreetingServiceImplTest` tests service logic, observer behavior, and status errors.
+- `GreetingServiceGrpcIntegrationTest` starts an in-process server and invokes every RPC through generated client stubs.
 
-The RPC response format is:
+`grpc-inprocess` is intentionally a runtime dependency as well as a test utility. LogNet's auto-configuration references `InProcessServerBuilder`, so the class must be available when Spring inspects that configuration.
 
-```text
-Hello from server - received your message: [the client message]
-```
+Unlike a REST controller, this class does not return objects directly. It writes messages or errors to a `StreamObserver` and calls `onCompleted()` when that response stream is finished.
 
-## Run this module
+## Implemented RPC behavior
 
-First build the whole reactor from the root directory so `greeting-common` is generated and installed:
+### Unary
+
+`greetingMethod` receives one request, logs it, sends the original tutorial-style response, and completes the call.
+
+### Server streaming
+
+`greetingStream` receives one request and sends three sequenced responses. The demonstration produces them synchronously; a real feed could emit asynchronously and should honor cancellation and transport readiness.
+
+### Client streaming
+
+`collectGreetings` returns a request observer. Each `onNext` adds an incoming message to an aggregate. When the client calls `onCompleted`, the server sends one summary response.
+
+### Bidirectional streaming
+
+`greetingChat` returns a request observer and sends a response for every received message. Client and server streams are independent in the gRPC model, even though this simple example responds immediately to each input.
+
+### Validation and status errors
+
+All methods reject blank messages using `Status.INVALID_ARGUMENT`. Sending `onError` ends that RPC; no subsequent messages or completion signal should be written to the response observer.
+
+## Build and run
+
+From the root `springboot-grpc` directory:
 
 ```powershell
 mvn clean install
 mvn -pl greeting-service spring-boot:run
 ```
 
-Alternatively, run the packaged executable JAR after the build:
+Or run the packaged server:
 
 ```powershell
 java -jar greeting-service/target/greeting-service-1.0.0-SNAPSHOT.jar
 ```
 
-The gRPC server listens on `localhost:6565`. This project does not start an HTTP REST endpoint.
+This is a gRPC endpoint on `localhost:6565`, not an HTTP/JSON REST endpoint.
 
-## Test with grpcurl
+## Tests
 
-With the server running:
+Run this module and its required contract module tests with:
 
 ```powershell
-grpcurl -plaintext -d '{"message":"Tech Primers"}' localhost:6565 greeting.GreetingService/greetingMethod
+mvn -pl greeting-service -am test
 ```
 
-Expected response:
-
-```json
-{
-  "message": "Hello from server - received your message: [Tech Primers]"
-}
-```
-
+The service-level tests use an in-memory `StreamObserver`. The integration tests use gRPC's in-process server and channel, exercising generated stubs and Protobuf serialization without opening a network port. The root README contains live `grpcurl` smoke tests for the actual Netty HTTP/2 server.

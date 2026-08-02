@@ -7,14 +7,25 @@ option java_multiple_files = true;
 option java_outer_classname = "GreetingProto";
 
 service GreetingService {
+  // Unary: one request produces one response.
   rpc greetingMethod (GreetingRequest) returns (GreetingResponse);
+
+  // Server streaming: one request produces several ordered responses.
+  rpc greetingStream (GreetingRequest) returns (stream GreetingResponse);
+
+  // Client streaming: several requests are aggregated into one response.
+  rpc collectGreetings (stream GreetingRequest) returns (GreetingResponse);
+
+  // Bidirectional streaming: both sides can independently send a stream.
+  rpc greetingChat (stream GreetingRequest) returns (stream GreetingResponse);
 }
 
 message GreetingRequest {
   string message = 1;
+  string sender = 2;
 }
 
 message GreetingResponse {
   string message = 1;
+  int64 sequence = 2;
 }
-

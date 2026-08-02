@@ -1,105 +1,198 @@
-# Spring Boot gRPC multi-module example
+# Spring Boot gRPC showcase
 
-This project implements a unary gRPC greeting server with Spring Boot, Protobuf-generated messages, and a generated gRPC server skeleton. Its split mirrors the architecture commonly shown in the Tech Primers tutorial: one reusable contract module and one runnable server module.
+This is a contract-first, multi-module Spring Boot application that demonstrates all four gRPC communication models. The project keeps the Protobuf API separate from the running server, following the reusable contract architecture popularized by the Tech Primers Spring Boot gRPC tutorial.
 
-## Project structure
+## What is gRPC?
+
+gRPC is a remote procedure call framework. Instead of designing URLs and exchanging hand-written JSON documents as in a typical REST API, you describe services and messages in a `.proto` contract. The Protobuf compiler generates strongly typed Java messages, client stubs, and server base classes from that contract.
+
+gRPC commonly uses:
+
+- Protocol Buffers, a compact binary serialization format with explicit field numbers.
+- HTTP/2, which provides multiplexed requests and long-lived bidirectional streams.
+- Generated APIs, so clients call methods rather than manually building HTTP requests.
+- Standard status codes such as `INVALID_ARGUMENT`, `NOT_FOUND`, and `UNAVAILABLE`.
+
+The service is still remote: a generated stub hides much of the networking, serialization, and response-handling code, but deadlines, cancellation, failures, and compatibility still need deliberate design.
+
+## Modules and build flow
+
+```text
+greeting.proto
+      |
+      | protoc + protoc-gen-grpc-java
+      v
+greeting-common JAR
+  - Protobuf message classes
+  - client stubs
+  - server base class
+      |
+      | Maven dependency
+      v
+greeting-service
+  - Spring Boot application
+  - @GRpcService implementation
+  - embedded Netty gRPC server on port 6565
+```
 
 ```text
 springboot-grpc/
-|-- pom.xml                         Parent and dependency/version management
+|-- pom.xml                         Reactor and dependency management
 |-- greeting-common/
-|   |-- pom.xml                     Protobuf and gRPC code-generation build
-|   `-- src/main/proto/
-|       `-- greeting.proto          Shared API contract
+|   |-- pom.xml                     Protobuf/gRPC generation configuration
+|   |-- README.md                   Contract module guide
+|   `-- src/main/proto/greeting.proto
 `-- greeting-service/
     |-- pom.xml                     Spring Boot server dependencies
-    `-- src/main/
-        |-- java/com/example/greeting/service/
-        |   |-- GreetingServiceApplication.java
-        |   `-- GreetingServiceImpl.java
-        `-- resources/application.yml
+    |-- README.md                   Server and RPC guide
+    `-- src/
+        |-- main/java/...           Application and service implementation
+        |-- main/resources/         Server configuration
+        `-- test/java/...           Unit and in-process transport tests
 ```
 
-Each module also has its own README describing its responsibility and implementation details:
+Read the module-specific documentation for more detail:
 
 - [`greeting-common/README.md`](greeting-common/README.md)
 - [`greeting-service/README.md`](greeting-service/README.md)
 
-## How the pieces connect
+## RPC styles demonstrated
 
-1. `greeting.proto` defines the wire contract and the unary `greetingMethod` RPC.
-2. Building `greeting-common` invokes `protoc` to generate message classes and `protoc-gen-grpc-java` to generate `GreetingServiceGrpc`.
-3. Maven packages those generated classes in the `greeting-common` JAR.
-4. `greeting-service` depends on that JAR and extends the generated `GreetingServiceImplBase` skeleton.
-5. The LogNet Spring Boot starter discovers `GreetingServiceImpl` through `@GRpcService` and serves it on port `6565`.
+| RPC | Request flow | Response flow | Typical use |
+| --- | --- | --- | --- |
+| `greetingMethod` | One | One | Normal request/response operations |
+| `greetingStream` | One | Stream | Progress, feeds, or a large result set |
+| `collectGreetings` | Stream | One | Uploading chunks, telemetry, or batches |
+| `greetingChat` | Stream | Stream | Chat and real-time collaboration |
 
-Versions are centralized in the root POM. The gRPC BOM pins every gRPC library to `1.71.0`, the line supported by LogNet starter `5.2.0`, to avoid dependency-management mismatches.
+Every response includes a `sequence` field so ordering is visible. Requests also include an optional `sender`; the server uses `anonymous` when it is absent.
 
 ## Prerequisites
 
 - JDK 17 or newer
 - Maven 3.9 or newer
-- `grpcurl` for the command-line smoke test
+- `grpcurl` for command-line calls
 
-You do not need to install `protoc` manually. Maven downloads the executable matching your operating system and processor.
+Maven downloads the correct `protoc` executables for the current operating system, so a separate Protobuf compiler installation is not required.
 
-## 1. Generate sources and build everything
+## Build, generate, and test
 
-Open a terminal in this directory and run:
+From this directory:
 
 ```powershell
 mvn clean install
 ```
 
-This command builds modules in dependency order. Generated files can be inspected at:
+The build order is `greeting-common` followed by `greeting-service`. Generated source can be inspected under:
 
 ```text
 greeting-common/target/generated-sources/protobuf/java
 greeting-common/target/generated-sources/protobuf/grpc-java
 ```
 
-Do not edit generated files; update `greeting.proto` and rebuild.
+Generated files are build output. Change `greeting.proto` and rebuild instead of editing them.
 
-## 2. Start the server
+Run just the automated tests with:
 
-After the successful install, run:
+```powershell
+mvn test
+```
+
+The test suite has two layers:
+
+- Service-level tests exercise observer completion, ordering, aggregation, and status errors.
+- In-process integration tests start a real gRPC server and call it through the generated blocking and asynchronous client stubs. Protobuf serialization and generated RPC bindings are exercised without using a TCP port.
+
+## Start the server
+
+After `mvn clean install`:
 
 ```powershell
 mvn -pl greeting-service spring-boot:run
 ```
 
-Wait until the logs report that the gRPC server is listening on port `6565`.
+Or run the executable JAR:
 
-## 3. Invoke the endpoint
+```powershell
+java -jar greeting-service/target/greeting-service-1.0.0-SNAPSHOT.jar
+```
 
-In another terminal, list the reflected services if desired:
+The server listens on `localhost:6565`. Reflection is enabled for local learning, allowing `grpcurl` to discover services without receiving the `.proto` file separately.
+
+## Explore with grpcurl
+
+List services and methods:
 
 ```powershell
 grpcurl -plaintext localhost:6565 list
+grpcurl -plaintext localhost:6565 list greeting.GreetingService
 ```
 
-Call the greeting RPC:
+### Unary call
 
 ```powershell
-grpcurl -plaintext -d '{"message":"Tech Primers"}' localhost:6565 greeting.GreetingService/greetingMethod
+grpcurl -plaintext `
+  -d '{"sender":"Developer","message":"Hello unary gRPC"}' `
+  localhost:6565 greeting.GreetingService/greetingMethod
 ```
 
-Expected response:
+### Server-streaming call
 
-```json
-{
-  "message": "Hello from server - received your message: [Tech Primers]"
-}
-```
-
-`-plaintext` is appropriate for this local example because TLS is not configured. Production deployments should configure transport security and omit `-plaintext`.
-
-## Clean rebuild
-
-Whenever the Protobuf contract changes, regenerate everything with:
+One request produces three responses:
 
 ```powershell
-mvn clean install
+grpcurl -plaintext `
+  -d '{"sender":"Developer","message":"Show me a stream"}' `
+  localhost:6565 greeting.GreetingService/greetingStream
 ```
 
-The `clean` phase removes old generated sources, preventing stale contract classes from remaining in the build.
+### Client-streaming call
+
+Pipe multiple JSON objects into `grpcurl`; the server returns one aggregate response after input ends:
+
+```powershell
+@'
+{"sender":"Developer","message":"First item"}
+{"sender":"Developer","message":"Second item"}
+'@ | grpcurl -plaintext -d '@' localhost:6565 greeting.GreetingService/collectGreetings
+```
+
+### Bidirectional-streaming call
+
+Each input produces a response on the same open call:
+
+```powershell
+@'
+{"sender":"Developer","message":"First chat message"}
+{"sender":"Developer","message":"Second chat message"}
+'@ | grpcurl -plaintext -d '@' localhost:6565 greeting.GreetingService/greetingChat
+```
+
+### Error handling
+
+Blank messages are rejected using the gRPC-native `INVALID_ARGUMENT` status:
+
+```powershell
+grpcurl -plaintext `
+  -d '{"sender":"Developer","message":""}' `
+  localhost:6565 greeting.GreetingService/greetingMethod
+```
+
+## Protobuf compatibility rules
+
+The number after each field, such as `message = 1`, is its permanent wire identifier. Once clients use a contract:
+
+- Do not change an existing field number.
+- Do not reuse a removed field number; mark it `reserved`.
+- Adding a new optional/default-valued field with a new number is generally compatible.
+- Package, service, and method names form part of the callable gRPC path.
+
+These rules let old and new clients coexist during gradual deployments.
+
+## Local example versus production
+
+`-plaintext` and server reflection make local exploration convenient. A production service should normally add TLS, authentication/authorization, deadlines, request-size limits, observability, and a policy for retries and idempotency. Streaming implementations should also account for cancellation and flow control when producing large or unbounded streams.
+
+## Maven certificate troubleshooting
+
+If Maven reports `PKIX path building failed` while contacting Maven Central, the JDK used by Maven does not trust the certificate presented by the local network or proxy. Check the active JDK with `mvn -version`, then configure that JDK/Maven installation with the organization's trusted CA certificate or ask the network administrator for the correct proxy setup. Avoid disabling Maven's TLS certificate validation, because that makes dependency downloads vulnerable to tampering.
